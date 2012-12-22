@@ -1,186 +1,148 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Threading;
-using System.Net.Sockets;
 using System.Net;
-using System.IO;
-namespace PROXY_2
+using System.Net.Sockets;
+using System;
+using System.Collections.Generic;
+using System.Text;
+using System.Threading;
+
+namespace SimpleHttpProxy
 {
-    class Twork {
-        public void thread2()
+    class ServerListerner
+    {
+        private int listenPort;
+        private TcpListener listener;
+
+        public ServerListerner(int port)
         {
-            while (true)
-            {
-                Console.WriteLine("2");
-                Thread.Sleep(200);
-            }
+            this.listenPort = port;
+            this.listener = new TcpListener(IPAddress.Any, this.listenPort);
         }
 
-    }
+        public void StartServer()
+        {
+            this.listener.Start();
+        }
 
+        public void AcceptConnection()
+        {
+            Socket newClient = this.listener.AcceptSocket();
+            ClientConnection client = new ClientConnection(newClient);
+            client.StartHandling();
+        }
 
-class MyTcpListener
-{
-    public static void Main()
-    {
-        TcpListener server = null;
-
-            int i;
-            Int32 port = 8080;
-            IPAddress localAddr = IPAddress.Any;
-            server = new TcpListener(localAddr, port);
-            server.Start();
-            Byte[] bytes = new Byte[1024];
-            String data = null;
-            while (true)
-            {
-                Console.Write("Waiting for a connection... ");
-                
-                Console.WriteLine("Connected!");
-                data = null;
-                
-                
-
-           //     while ((i = stream.Read(bytes, 0, bytes.Length)) != 0)
-               while(true)
-               {
-                   TcpClient client = server.AcceptTcpClient();
-                    NetworkStream stream = client.GetStream();
-                    FileStream fs = new FileStream("txt.txt", FileMode.Append, FileAccess.Write);
-                    StreamWriter sw = new StreamWriter(fs, System.Text.Encoding.UTF8);
-                    // Translate data bytes to a ASCII string.
-                    data = System.Text.Encoding.ASCII.GetString(bytes, 0, stream.Read(bytes,0,bytes.Length));
-                    Console.WriteLine(data);
-                    //sw.WriteLine(data);
-
-                    data = data.ToUpper();
-                  //  byte[] msg = System.Text.Encoding.ASCII.GetBytes(data);
-                   // stream.Write(msg, 0, msg.Length);
-                  //  Console.WriteLine("Sent: {0}", data);
-           //       byte[] msg=System.Text.Encoding.ASCII.GetBytes(data);
-
-                  
-          byte[] msg = System.Text.Encoding.ASCII.GetBytes("HTTP/1.1 302 Found\nStatus: 302 Moved Temporarily\nX-Powered-By: PHP/5.4.5\nLocation: http://kldp.org\nContent-type: text/html; charset=utf-8\nDate: Sun, 02 Dec 2012 22:28:40 GMT\nServer: lighttpd/1.4.30\n");
-               
-                   NetworkStream wstream = client.GetStream();
-
-                  wstream.Write(msg, 0, msg.Length);
-
-                    sw.Flush();
-                    sw.Close();
-                    fs.Close(); wstream.Close(0);
-                    client.Close();  
-                }
-
-               
-            } 
-            //server.Stop();
-
-
-        //Console.WriteLine("\nHit enter to continue...");
-   //     Console.Read();
     }
 }
-}
-/*
-namespace PROXY_2
+
+
+namespace SimpleHttpProxy
 {
-    class threadwork
-    {
-        public void thread1()
-        {
-            while (true)
-            {
-            }
-        }
-        public void thread2()
-        {
-            while (true)
-            {
-                Console.WriteLine("2");
-                Thread.Sleep(200);
-            }
-        }
-    }
     class Program
     {
-
         static void Main(string[] args)
         {
-            threadwork work = new threadwork();
-            ThreadStart td1 = new ThreadStart(work.thread1);
-            ThreadStart td2 = new ThreadStart(work.thread2);
-            Thread t1 = new Thread(td1);
-            Thread t2 = new Thread(td2);
-            Socket server;
-            Socket client;
-            server = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-            IPEndPoint ipep = new IPEndPoint(IPAddress.Any, 8080);
-            server.Bind(ipep);
-            
+            ServerListerner simpleHttpProxyServer = new ServerListerner(8080);
+            simpleHttpProxyServer.StartServer();
             while (true)
             {
-                server.Listen(10000);
-            
+                simpleHttpProxyServer.AcceptConnection();
             }
-            client = server.Accept();
-
-
-            t1.Start();
-            t2.Start();
-
-
         }
     }
 }
-  */  
-    /*
-    class NetworkTest
+
+
+namespace SimpleHttpProxy
+{
+    class ClientConnection
     {
+        private Socket clientSocket;
 
-        private Socket server;
-        private Socket client;
-
-        private void ServerOpen()
+        public ClientConnection(Socket client)
         {
+            this.clientSocket = client;
+        }
 
-            server = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-            IPEndPoint ipep = new IPEndPoint(IPAddress.Any, 9999);
-            server.Bind(ipep);
-            server.Listen(5);
+        public void StartHandling()
+        {
+            Thread handler = new Thread(Handler);
+            handler.Priority = ThreadPriority.AboveNormal;
+            handler.Start();
+        }
 
-            Console.WriteLine("클라이언트 연결을 대기합니다.");
+        private void Handler()
+        {
+            bool recvRequest = true;
+            string EOL = "\r\n";
 
-            client = server.Accept();
+            string requestPayload = "";
+            string requestTempLine = "";
+            List<string> requestLines = new List<string>();
+            byte[] requestBuffer = new byte[1];
+            byte[] responseBuffer = new byte[1];
 
-            for (int i = 0; i < 10; i++)
+            requestLines.Clear();
+
+            try
             {
-                Console.Write("클라이언트로 보낼 내용은 ==> ");
-                string str = Console.ReadLine();
-                Writer(str);
+                //State 0: Handle Request from Client
+                while (recvRequest)
+                {
+                    this.clientSocket.Receive(requestBuffer);
+                    string fromByte = ASCIIEncoding.ASCII.GetString(requestBuffer);
+                    requestPayload += fromByte;
+                    requestTempLine += fromByte;
+
+                    if (requestTempLine.EndsWith(EOL))
+                    {
+                        requestLines.Add(requestTempLine.Trim());
+                        requestTempLine = "";
+                    }
+
+                    if (requestPayload.EndsWith(EOL + EOL))
+                    {
+                        recvRequest = false;
+                    }
+                }
+                Console.WriteLine("Raw Request Received...");
+                Console.WriteLine(requestPayload);
+
+                //State 1: Rebuilding Request Information and Create Connection to Destination Server
+                string remoteHost = requestLines[0].Split(' ')[1].Replace("http://", "").Split('/')[0];
+                string requestFile = requestLines[0].Replace("http://", "").Replace(remoteHost, "");
+                requestLines[0] = requestFile;
+
+                requestPayload = "";
+                foreach (string line in requestLines)
+                {
+                    requestPayload += line;
+                    requestPayload += EOL;
+                }
+
+                Socket destServerSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+                destServerSocket.Connect(remoteHost, 80);
+
+                //State 2: Sending New Request Information to Destination Server and Relay Response to Client            
+                destServerSocket.Send(ASCIIEncoding.ASCII.GetBytes(requestPayload));
+
+                //Console.WriteLine("Begin Receiving Response...");
+                while (destServerSocket.Receive(responseBuffer) != 0)
+                {
+                    //Console.Write(ASCIIEncoding.ASCII.GetString(responseBuffer));
+                    this.clientSocket.Send(responseBuffer);
+                }
+
+                destServerSocket.Disconnect(false);
+                destServerSocket.Dispose();
+                this.clientSocket.Disconnect(false);
+                this.clientSocket.Dispose();
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine("Error Occured: " + e.Message);
+                //Console.WriteLine(e.StackTrace);
             }
         }
 
-        private void Writer(string str)
-        {
-            NetworkStream stream = new NetworkStream(client);
-            StreamWriter writer = new StreamWriter(stream);
-
-            writer.WriteLine(str);
-            writer.Flush();
-        }
-
-
-        static void Main(string[] args)
-        {
-            NetworkTest networktest = new NetworkTest();
-
-            networktest.ServerOpen();
-            Console.ReadLine();
-        }
     }
 }
-    */
+
