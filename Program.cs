@@ -84,7 +84,6 @@ namespace SimpleHttpProxy
 
             try
             {
-                //State 0: Handle Request from Client
                 while (recvRequest)
                 {
                     this.clientSocket.Receive(requestBuffer);
@@ -105,8 +104,6 @@ namespace SimpleHttpProxy
                 }
                 Console.WriteLine("Raw Request Received...");
                 Console.WriteLine(requestPayload);
-
-                //State 1: Rebuilding Request Information and Create Connection to Destination Server
                 string remoteHost = requestLines[0].Split(' ')[1].Replace("http://", "").Split('/')[0];
                 string requestFile = requestLines[0].Replace("http://", "").Replace(remoteHost, "");
                 requestLines[0] = requestFile;
@@ -119,15 +116,12 @@ namespace SimpleHttpProxy
                 }
 
                 Socket destServerSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-                destServerSocket.Connect(remoteHost, 80);
-
-                //State 2: Sending New Request Information to Destination Server and Relay Response to Client            
+                destServerSocket.Connect(remoteHost, 80);          
                 destServerSocket.Send(ASCIIEncoding.ASCII.GetBytes(requestPayload));
 
-                //Console.WriteLine("Begin Receiving Response...");
+
                 while (destServerSocket.Receive(responseBuffer) != 0)
                 {
-                    //Console.Write(ASCIIEncoding.ASCII.GetString(responseBuffer));
                     this.clientSocket.Send(responseBuffer);
                 }
 
@@ -139,7 +133,6 @@ namespace SimpleHttpProxy
             catch (Exception e)
             {
                 Console.WriteLine("Error Occured: " + e.Message);
-                //Console.WriteLine(e.StackTrace);
             }
         }
 
